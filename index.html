@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>사진 포맷 변환기</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace" aria-labelledby="app-title">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Local image converter</p>
+            <h1 id="app-title">사진 포맷 변환기</h1>
+          </div>
+          <button class="icon-button" id="clearButton" type="button" title="목록 비우기" aria-label="목록 비우기">
+            <span aria-hidden="true">×</span>
+          </button>
+        </header>
+
+        <div class="tool-grid">
+          <label class="dropzone" id="dropzone">
+            <input id="fileInput" type="file" accept="image/*,.heic,.heif,.tif,.tiff" multiple>
+            <span class="drop-icon" aria-hidden="true">+</span>
+            <span class="drop-title">사진을 선택하거나 여기로 끌어오세요</span>
+            <span class="drop-copy">입력은 브라우저가 읽는 이미지 기준입니다. PNG, JPG, WebP, GIF, BMP, AVIF는 대부분 지원되고 HEIC, TIFF는 환경에 따라 제한됩니다.</span>
+          </label>
+
+          <aside class="controls" aria-label="변환 옵션">
+            <div class="control-group">
+              <label for="formatSelect">변환 포맷</label>
+              <select id="formatSelect"></select>
+            </div>
+
+            <div class="notice" id="formatNotice">
+              PNG는 무손실 저장입니다. JPEG, WebP, AVIF는 다시 압축하므로 품질 설정에 따라 용량과 화질이 바뀝니다.
+            </div>
+
+            <div class="control-group" id="qualityControl">
+              <div class="label-row">
+                <label for="qualityRange">품질</label>
+                <output id="qualityValue" for="qualityRange">92%</output>
+              </div>
+              <input id="qualityRange" type="range" min="40" max="100" value="92">
+            </div>
+
+            <label class="checkbox-row">
+              <input id="resizeToggle" type="checkbox">
+              <span>최대 크기 제한</span>
+            </label>
+
+            <div class="split-inputs">
+              <div class="control-group">
+                <label for="maxWidth">가로</label>
+                <input id="maxWidth" type="number" min="1" value="1920" disabled>
+              </div>
+              <div class="control-group">
+                <label for="maxHeight">세로</label>
+                <input id="maxHeight" type="number" min="1" value="1080" disabled>
+              </div>
+            </div>
+
+            <button class="primary-button" id="convertButton" type="button" disabled>
+              변환하기
+            </button>
+          </aside>
+        </div>
+      </section>
+
+      <section class="results" aria-labelledby="results-title">
+        <div class="section-heading">
+          <h2 id="results-title">파일 목록</h2>
+          <p id="statusText">아직 선택된 사진이 없습니다.</p>
+        </div>
+        <div class="file-list" id="fileList"></div>
+      </section>
+    </main>
+
+    <template id="fileCardTemplate">
+      <article class="file-card">
+        <img class="preview" alt="">
+        <div class="file-meta">
+          <h3></h3>
+          <p></p>
+        </div>
+        <div class="file-actions">
+          <span class="badge">대기</span>
+          <a class="download-link" hidden>다운로드</a>
+        </div>
+      </article>
+    </template>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
