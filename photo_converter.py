@@ -23,14 +23,14 @@ except ImportError:
 INPUT_TYPES = [
     (
         "Image files",
-        "*.jpg *.jpeg *.jpe *.png *.heic *.heif *.hif *.webp *.avif *.dng *.raw *.nef *.cr2 *.cr3 *.arw *.rw2 *.orf *.raf *.bmp *.dib *.gif "
+        "*.jpg *.jpeg *.jpe *.png *.heic *.heif *.hif *.hifc *.webp *.avif *.dng *.raw *.nef *.cr2 *.cr3 *.arw *.rw2 *.orf *.raf *.bmp *.dib *.gif "
         "*.tif *.tiff *.ico *.cur *.jfif *.pjpeg *.pjp *.apng *.ppm *.pgm *.pbm *.pnm "
         "*.tga *.icb *.vda *.vst *.dds *.blp *.pcx *.sgi *.bw *.rgb *.rgba *.pdf",
     ),
-    ("Phone photos", "*.jpg *.jpeg *.png *.heic *.heif *.hif *.webp *.avif *.dng"),
-    ("iPhone photos", "*.heic *.heif *.hif *.jpg *.jpeg *.png"),
-    ("Android photos", "*.jpg *.jpeg *.png *.webp *.heic *.heif *.avif *.dng"),
-    ("HEIC / HEIF", "*.heic *.heif *.hif"),
+    ("Phone photos", "*.jpg *.jpeg *.png *.heic *.heif *.hif *.hifc *.webp *.avif *.dng"),
+    ("iPhone photos", "*.heic *.heif *.hif *.hifc *.jpg *.jpeg *.png"),
+    ("Android photos", "*.jpg *.jpeg *.png *.webp *.heic *.heif *.hif *.hifc *.avif *.dng"),
+    ("HEIC / HEIF / HIF", "*.heic *.heif *.hif *.hifc"),
     ("AVIF", "*.avif"),
     ("PNG", "*.png"),
     ("JPEG", "*.jpg *.jpeg"),
@@ -49,6 +49,7 @@ OUTPUT_FORMATS = {
     "AVIF": {"ext": ".avif", "pil": "AVIF", "lossy": True, "alpha": True, "feature": "avif"},
     "HEIC": {"ext": ".heic", "pil": "HEIF", "lossy": True, "alpha": True, "requires_heif": True},
     "HEIF": {"ext": ".heif", "pil": "HEIF", "lossy": True, "alpha": True, "requires_heif": True},
+    "HIF": {"ext": ".hif", "pil": "HEIF", "lossy": True, "alpha": True, "requires_heif": True},
     "BMP": {"ext": ".bmp", "pil": "BMP", "lossy": False, "alpha": False},
     "TIFF": {"ext": ".tiff", "pil": "TIFF", "lossy": False, "alpha": True},
     "GIF": {"ext": ".gif", "pil": "GIF", "lossy": False, "alpha": False},
@@ -575,7 +576,7 @@ class PhotoConverter:
 
             # 4. Save Settings
             save_kwargs = {}
-            if fmt_name in {"JPEG", "WebP", "AVIF", "HEIC", "HEIF"}:
+            if fmt_name in {"JPEG", "WebP", "AVIF", "HEIC", "HEIF", "HIF"}:
                 save_kwargs["quality"] = self.quality.get()
                 save_kwargs["method"] = 6 if fmt_name == "WebP" else None
             if fmt_name == "JPEG":
@@ -592,7 +593,7 @@ class PhotoConverter:
             elif image.mode == "P":
                 image = image.convert("RGBA")
 
-            if exif and fmt_name in {"JPEG", "WebP", "TIFF", "HEIC", "HEIF", "AVIF"}:
+            if exif and fmt_name in {"JPEG", "WebP", "TIFF", "HEIC", "HEIF", "HIF", "AVIF"}:
                 save_kwargs["exif"] = exif
 
             save_kwargs = {key: value for key, value in save_kwargs.items() if value is not None}
@@ -601,12 +602,30 @@ class PhotoConverter:
 
     @staticmethod
     def _open_image(source: Path) -> Image.Image:
+        # Check for RAW / DNG formats
         if source.suffix.lower() in {".dng", ".raw", ".nef", ".cr2", ".cr3", ".arw", ".rw2", ".orf", ".raf"}:
             if rawpy is None:
                 raise RuntimeError("RAW/DNG 입력은 rawpy 설치가 필요합니다.")
             with rawpy.imread(str(source)) as raw:
                 rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=8)
             return Image.fromarray(rgb)
+        
+        # Check for specific iOS .hifc format
+        if source.suffix.lower() == ".hifc":
+            try:
+                import pillow_heif
+                heif_file = pillow_heif.read_heif(str(source))
+                return Image.frombytes(
+                    heif_file.mode,
+                    heif_file.size,
+                    heif_file.data,
+                    "raw",
+                    heif_file.mode,
+                    heif_file.stride,
+                )
+            except Exception as exc:
+                raise RuntimeError(f"iOS .hifc 파일 디코딩 오류: {exc}")
+                
         return Image.open(source)
 
     @staticmethod

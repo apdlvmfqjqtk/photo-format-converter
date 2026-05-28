@@ -49,6 +49,97 @@ const modalDownloadLink = document.querySelector("#modalDownloadLink");
 const modalCloseButton = document.querySelector("#modalCloseButton");
 const modalOverlay = document.querySelector("#modalOverlay");
 
+// Custom client-side BMP Encoder
+function canvasToBMP(canvas) {
+  const width = canvas.width;
+  const height = canvas.height;
+  const context = canvas.getContext("2d");
+  const imgData = context.getImageData(0, 0, width, height);
+  const data = imgData.data;
+  
+  const rowBytes = Math.floor((width * 3 + 3) / 4) * 4;
+  const pixelDataSize = rowBytes * height;
+  const fileSize = 54 + pixelDataSize;
+  
+  const buffer = new ArrayBuffer(fileSize);
+  const view = new DataView(buffer);
+  
+  // Header
+  view.setUint16(0, 0x424D, false); // "BM"
+  view.setUint32(2, fileSize, true);
+  view.setUint32(6, 0, true);
+  view.setUint32(10, 54, true); // data offset
+  
+  // DIB Header
+  view.setUint32(14, 40, true);
+  view.setUint32(18, width, true);
+  view.setUint32(22, height, true);
+  view.setUint16(26, 1, true);
+  view.setUint16(28, 24, true); // 24-bit BGR
+  view.setUint32(30, 0, true);
+  view.setUint32(34, pixelDataSize, true);
+  view.setUint32(38, 2835, true);
+  view.setUint32(42, 2835, true);
+  view.setUint32(46, 0, true);
+  view.setUint32(50, 0, true);
+  
+  // Pixel data (BGR bottom-up)
+  let offset = 54;
+  for (let y = height - 1; y >= 0; y--) {
+    const rowOffset = y * width * 4;
+    let xOffset = 0;
+    for (let x = 0; x < width; x++) {
+      const idx = rowOffset + x * 4;
+      view.setUint8(offset + xOffset, data[idx + 2]); // Blue
+      view.setUint8(offset + xOffset + 1, data[idx + 1]); // Green
+      view.setUint8(offset + xOffset + 2, data[idx]); // Red
+      xOffset += 3;
+    }
+    // Row padding
+    for (let p = xOffset; p < rowBytes; p++) {
+      view.setUint8(offset + p, 0);
+    }
+    offset += rowBytes;
+  }
+  
+  return new Blob([buffer], { type: "image/bmp" });
+}
+
+// Custom client-side ICO Encoder
+async function canvasToICO(canvas) {
+  const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  const arrayBuffer = await pngBlob.arrayBuffer();
+  const pngData = new Uint8Array(arrayBuffer);
+  
+  const headerSize = 22;
+  const fileLength = headerSize + pngData.length;
+  const buffer = new ArrayBuffer(fileLength);
+  const view = new DataView(buffer);
+  
+  // ICO Header
+  view.setUint16(0, 0, true);
+  view.setUint16(2, 1, true); // type: 1 = ICO
+  view.setUint16(4, 1, true); // count: 1 image
+  
+  // Dir Entry
+  const w = canvas.width >= 256 ? 0 : canvas.width;
+  const h = canvas.height >= 256 ? 0 : canvas.height;
+  view.setUint8(6, w);
+  view.setUint8(7, h);
+  view.setUint8(8, 0);
+  view.setUint8(9, 0);
+  view.setUint16(10, 1, true); // planes
+  view.setUint16(12, 32, true); // 32-bit color
+  view.setUint32(14, pngData.length, true);
+  view.setUint32(18, headerSize, true); // offset: 22
+  
+  // png binary copy
+  const dest = new Uint8Array(buffer, headerSize);
+  dest.set(pngData);
+  
+  return new Blob([buffer], { type: "image/x-icon" });
+}
+
 const outputFormats = [
   {
     type: "image/png",
@@ -78,6 +169,22 @@ const outputFormats = [
     quality: true,
     notice: "AVIF는 최고 수준의 차세대 압축률을 자랑하지만 브라우저 인코딩 속도가 다소 느릴 수 있습니다.",
   },
+  {
+    type: "image/bmp",
+    label: "BMP",
+    extension: "bmp",
+    quality: false,
+    notice: "BMP는 Windows 표준의 무압축 이미지 형식입니다. 화질 손실이 전혀 없는 대신 파일 크기가 매우 큽니다.",
+    customEncode: canvasToBMP,
+  },
+  {
+    type: "image/x-icon",
+    label: "ICO",
+    extension: "ico",
+    quality: false,
+    notice: "ICO는 Windows 아이콘 이미지 파일 형식입니다. 32-bit 알파 채널 PNG를 내장해 선명한 아이콘을 제작합니다.",
+    customEncode: canvasToICO,
+  },
 ];
 
 let entries = [];
@@ -93,7 +200,7 @@ function canvasSupports(type) {
 }
 
 function initializeFormats() {
-  supportedFormats = outputFormats.filter((format) => canvasSupports(format.type));
+  supportedFormats = outputFormats.filter((format) => format.customEncode || canvasSupports(format.type));
   formatSelect.textContent = "";
 
   for (const format of supportedFormats) {
@@ -193,16 +300,16 @@ function renderEntries() {
 }
 
 function addFiles(files) {
-  const imageFiles = [...files].filter((file) => file.type.startsWith("image/") || /\.(heic|heif|tif|tiff)$/i.test(file.name));
+  const imageFiles = [...files].filter((file) => file.type.startsWith("image/") || /\.(heic|heif|hif|hifc|tif|tiff)$/i.test(file.name));
 
   for (const file of imageFiles) {
     // Avoid duplicate additions based on name & size
     if (entries.some((entry) => entry.file.name === file.name && entry.file.size === file.size)) continue;
     
-    // For HEIC, create a placeholder image url or let it show default
+    // For HEIC/HIF, create a placeholder image url or let it show default
     let previewUrl = "";
-    if (/\.(heic|heif)$/i.test(file.name)) {
-      previewUrl = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' width%3D'100' height%3D'100' viewBox%3D'0 0 100 100'%3E%3Crect width%3D'100' height%3D'100' fill%3D'%231e293b'%2F%3E%3Ctext x%3D'50%25' y%3D'55%25' dominant-baseline%3D'middle' text-anchor%3D'middle' fill%3D'%2394a3b8' font-size%3D'12' font-family%3D'sans-serif'%3EHEIC%3C%2Ftext%3E%3C%2Fsvg%3E";
+    if (/\.(heic|heif|hif|hifc)$/i.test(file.name)) {
+      previewUrl = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' width%3D'100' height%3D'100' viewBox%3D'0 0 100 100'%3E%3Crect width%3D'100' height%3D'100' fill%3D'%231e293b'%2F%3E%3Ctext x%3D'50%25' y%3D'55%25' dominant-baseline%3D'middle' text-anchor%3D'middle' fill%3D'%2394a3b8' font-size%3D'12' font-family%3D'sans-serif'%3EHEIC%20%2F%20HIF%3C%2Ftext%3E%3C%2Fsvg%3E";
     } else {
       previewUrl = URL.createObjectURL(file);
     }
@@ -308,8 +415,8 @@ async function convertEntry(entry) {
   try {
     let sourceBlob = entry.file;
 
-    // HEIC decoding logic client-side
-    const isHeic = /\.(heic|heif)$/i.test(entry.file.name);
+    // HEIC/HIF decoding logic client-side
+    const isHeic = /\.(heic|heif|hif|hifc)$/i.test(entry.file.name);
     if (isHeic) {
       entry.status = "HEIC 디코딩";
       renderEntries();
@@ -393,13 +500,18 @@ async function convertEntry(entry) {
     context.restore();
 
     // Export Blob
-    const blob = await new Promise((resolve, reject) => {
-      canvas.toBlob(
-        (result) => (result ? resolve(result) : reject(new Error("포맷 내보내기를 지원하지 않습니다."))),
-        format.type,
-        format.quality ? Number(qualityRange.value) / 100 : undefined,
-      );
-    });
+    let blob;
+    if (format.customEncode) {
+      blob = await format.customEncode(canvas);
+    } else {
+      blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(
+          (result) => (result ? resolve(result) : reject(new Error("포맷 내보내기를 지원하지 않습니다."))),
+          format.type,
+          format.quality ? Number(qualityRange.value) / 100 : undefined,
+        );
+      });
+    }
 
     if (entry.downloadUrl) URL.revokeObjectURL(entry.downloadUrl);
     entry.blob = blob;
