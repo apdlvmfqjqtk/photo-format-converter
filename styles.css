@@ -670,6 +670,36 @@ input[type="range"] {
   font-weight: 700;
 }
 
+/* Slider adjust styles */
+.adjust-slider {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.adjust-slider .label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.adjust-slider label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.adjust-slider output {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-light);
+}
+
+.adjust-slider input[type="range"] {
+  height: 4px;
+  border-radius: 2px;
+}
+
 /* Responsiveness */
 @media (max-width: 840px) {
   .app-shell {

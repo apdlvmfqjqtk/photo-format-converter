@@ -28,7 +28,7 @@
             <input id="fileInput" type="file" accept="image/*,.heic,.heif,.tif,.tiff" multiple>
             <span class="drop-icon" aria-hidden="true">+</span>
             <span class="drop-title">사진을 선택하거나 여기로 끌어오세요</span>
-            <span class="drop-copy">브라우저 내에서 안전하게 변환하며, 파일은 외부 서버로 전송되지 않습니다.</span>
+            <span class="drop-copy">브라우저 내에서 안전하게 변환하며, 파일은 외부 서버로 전송되지 않습니다. <br><strong>(HEIC 파일 자동 변환 및 Ctrl+V 클립보드 붙여넣기 지원)</strong></span>
           </label>
 
           <aside class="controls" aria-label="변환 옵션">
@@ -106,6 +106,43 @@
               </select>
             </div>
 
+            <!-- 세부 화질 보정 -->
+            <div class="control-group">
+              <label>세부 보정</label>
+              
+              <div class="adjust-slider">
+                <div class="label-row">
+                  <label for="brightnessRange">밝기</label>
+                  <output id="brightnessValue" for="brightnessRange">100%</output>
+                </div>
+                <input id="brightnessRange" type="range" min="0" max="200" value="100">
+              </div>
+
+              <div class="adjust-slider">
+                <div class="label-row">
+                  <label for="contrastRange">대비</label>
+                  <output id="contrastValue" for="contrastRange">100%</output>
+                </div>
+                <input id="contrastRange" type="range" min="0" max="200" value="100">
+              </div>
+
+              <div class="adjust-slider">
+                <div class="label-row">
+                  <label for="saturationRange">채도</label>
+                  <output id="saturationValue" for="saturationRange">100%</output>
+                </div>
+                <input id="saturationRange" type="range" min="0" max="200" value="100">
+              </div>
+
+              <div class="adjust-slider">
+                <div class="label-row">
+                  <label for="blurRange">블러</label>
+                  <output id="blurValue" for="blurRange">0px</output>
+                </div>
+                <input id="blurRange" type="range" min="0" max="20" value="0">
+              </div>
+            </div>
+
             <div class="checkbox-group">
               <label class="checkbox-row">
                 <input id="flipHToggle" type="checkbox">
@@ -118,6 +155,10 @@
               <label class="checkbox-row">
                 <input id="grayscaleToggle" type="checkbox">
                 <span>흑백 필터</span>
+              </label>
+              <label class="checkbox-row" style="border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px;">
+                <input id="autoDownloadToggle" type="checkbox">
+                <span style="color: var(--accent-light); font-weight: 700;">변환 후 즉시 다운로드</span>
               </label>
             </div>
 

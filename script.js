@@ -29,6 +29,17 @@ const filenamePrefix = document.querySelector("#filenamePrefix");
 const filenameSuffix = document.querySelector("#filenameSuffix");
 const downloadAllZipButton = document.querySelector("#downloadAllZipButton");
 
+// Advanced Slider Controls
+const brightnessRange = document.querySelector("#brightnessRange");
+const brightnessValue = document.querySelector("#brightnessValue");
+const contrastRange = document.querySelector("#contrastRange");
+const contrastValue = document.querySelector("#contrastValue");
+const saturationRange = document.querySelector("#saturationRange");
+const saturationValue = document.querySelector("#saturationValue");
+const blurRange = document.querySelector("#blurRange");
+const blurValue = document.querySelector("#blurValue");
+const autoDownloadToggle = document.querySelector("#autoDownloadToggle");
+
 // Modal Elements
 const previewModal = document.querySelector("#previewModal");
 const modalImage = document.querySelector("#modalImage");
@@ -72,6 +83,7 @@ const outputFormats = [
 let entries = [];
 let supportedFormats = [];
 let jszipLoaded = false;
+let heic2anyLoaded = false;
 
 function canvasSupports(type) {
   const canvas = document.createElement("canvas");
@@ -151,7 +163,9 @@ function renderEntries() {
     preview.src = entry.previewUrl;
     preview.alt = `${entry.file.name} 미리보기`;
     title.textContent = entry.file.name;
-    origMeta.textContent = `${entry.file.type.split("/")[1]?.toUpperCase() || "IMAGE"} · ${formatBytes(entry.file.size)}`;
+    
+    const ext = entry.file.name.split(".").pop().toUpperCase();
+    origMeta.textContent = `${ext} · ${formatBytes(entry.file.size)}`;
     
     if (entry.status === "완료" && entry.newSizeStr && entry.ratioStr) {
       newMeta.textContent = `➡ ${entry.newSizeStr} (${entry.ratioStr})`;
@@ -185,9 +199,17 @@ function addFiles(files) {
     // Avoid duplicate additions based on name & size
     if (entries.some((entry) => entry.file.name === file.name && entry.file.size === file.size)) continue;
     
+    // For HEIC, create a placeholder image url or let it show default
+    let previewUrl = "";
+    if (/\.(heic|heif)$/i.test(file.name)) {
+      previewUrl = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' width%3D'100' height%3D'100' viewBox%3D'0 0 100 100'%3E%3Crect width%3D'100' height%3D'100' fill%3D'%231e293b'%2F%3E%3Ctext x%3D'50%25' y%3D'55%25' dominant-baseline%3D'middle' text-anchor%3D'middle' fill%3D'%2394a3b8' font-size%3D'12' font-family%3D'sans-serif'%3EHEIC%3C%2Ftext%3E%3C%2Fsvg%3E";
+    } else {
+      previewUrl = URL.createObjectURL(file);
+    }
+
     entries.push({
       file,
-      previewUrl: URL.createObjectURL(file),
+      previewUrl,
       downloadUrl: "",
       blob: null,
       outputName: "",
@@ -201,10 +223,10 @@ function addFiles(files) {
   renderEntries();
 }
 
-function imageFromFile(file) {
+function imageFromBlob(blob) {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(blob);
 
     image.onload = () => {
       URL.revokeObjectURL(url);
@@ -212,7 +234,7 @@ function imageFromFile(file) {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("이 브라우저에서 지원하지 않거나 손상된 파일 형식입니다."));
+      reject(new Error("이 브라우저에서 읽을 수 없는 이미지 형식입니다."));
     };
     image.src = url;
   });
@@ -258,6 +280,25 @@ function getTargetSize(width, height) {
   return { width, height };
 }
 
+function loadHeic2Any() {
+  return new Promise((resolve, reject) => {
+    if (window.heic2any) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js";
+    script.onload = () => {
+      heic2anyLoaded = true;
+      resolve();
+    };
+    script.onerror = () => {
+      reject(new Error("HEIC 디코더 라이브러리를 로드할 수 없습니다. 오프라인이거나 CDN 오류일 수 있습니다."));
+    };
+    document.head.appendChild(script);
+  });
+}
+
 async function convertEntry(entry) {
   const format = currentFormat();
   entry.status = "변환 중";
@@ -265,7 +306,31 @@ async function convertEntry(entry) {
   renderEntries();
 
   try {
-    const image = await imageFromFile(entry.file);
+    let sourceBlob = entry.file;
+
+    // HEIC decoding logic client-side
+    const isHeic = /\.(heic|heif)$/i.test(entry.file.name);
+    if (isHeic) {
+      entry.status = "HEIC 디코딩";
+      renderEntries();
+      await loadHeic2Any();
+      
+      const converted = await heic2any({
+        blob: entry.file,
+        toType: "image/png"
+      });
+      sourceBlob = Array.isArray(converted) ? converted[0] : converted;
+
+      // Update preview to converted one
+      if (entry.previewUrl.startsWith("data:")) {
+        entry.previewUrl = URL.createObjectURL(sourceBlob);
+      }
+    }
+
+    entry.status = "렌더링 중";
+    renderEntries();
+
+    const image = await imageFromBlob(sourceBlob);
     const size = getTargetSize(image.naturalWidth, image.naturalHeight);
     
     // Rotate checks
@@ -288,9 +353,26 @@ async function convertEntry(entry) {
       context.fillRect(0, 0, canvas.width, canvas.height);
     }
 
-    // Grayscale Filter
+    // Advanced Synthesis Filters
+    const filters = [];
     if (grayscaleToggle.checked) {
-      context.filter = "grayscale(100%)";
+      filters.push("grayscale(100%)");
+    }
+    if (brightnessRange.value !== "100") {
+      filters.push(`brightness(${brightnessRange.value}%)`);
+    }
+    if (contrastRange.value !== "100") {
+      filters.push(`contrast(${contrastRange.value}%)`);
+    }
+    if (saturationRange.value !== "100") {
+      filters.push(`saturate(${saturationRange.value}%)`);
+    }
+    if (blurRange.value !== "0") {
+      filters.push(`blur(${blurRange.value}px)`);
+    }
+    
+    if (filters.length > 0) {
+      context.filter = filters.join(" ");
     } else {
       context.filter = "none";
     }
@@ -335,6 +417,14 @@ async function convertEntry(entry) {
     entry.newSizeStr = formatBytes(blob.size);
     const pctDiff = ((blob.size - entry.file.size) / entry.file.size) * 100;
     entry.ratioStr = pctDiff < 0 ? `${pctDiff.toFixed(1)}%` : `+${pctDiff.toFixed(1)}%`;
+
+    // Auto download if toggle is checked
+    if (autoDownloadToggle.checked && entry.downloadUrl) {
+      const a = document.createElement("a");
+      a.href = entry.downloadUrl;
+      a.download = entry.outputName;
+      a.click();
+    }
     
   } catch (error) {
     entry.status = error.message;
@@ -440,6 +530,21 @@ async function downloadAllZip() {
   }
 }
 
+// Clipboard Paste support
+window.addEventListener("paste", (event) => {
+  const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+  const files = [];
+  for (const item of items) {
+    if (item.kind === "file") {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  if (files.length > 0) {
+    addFiles(files);
+  }
+});
+
 // Events
 fileInput.addEventListener("change", (event) => {
   addFiles(event.target.files);
@@ -465,6 +570,23 @@ formatSelect.addEventListener("change", updateFormatControls);
 
 qualityRange.addEventListener("input", () => {
   qualityValue.value = `${qualityRange.value}%`;
+});
+
+// Advanced Sliders update outputs
+brightnessRange.addEventListener("input", () => {
+  brightnessValue.value = `${brightnessRange.value}%`;
+});
+
+contrastRange.addEventListener("input", () => {
+  contrastValue.value = `${contrastRange.value}%`;
+});
+
+saturationRange.addEventListener("input", () => {
+  saturationValue.value = `${saturationRange.value}%`;
+});
+
+blurRange.addEventListener("input", () => {
+  blurValue.value = `${blurRange.value}px`;
 });
 
 // Resize mode UI toggles
@@ -518,7 +640,7 @@ clearButton.addEventListener("click", () => {
 convertButton.addEventListener("click", async () => {
   convertButton.disabled = true;
   for (const entry of entries) {
-    if (entry.status !== "변환 중") {
+    if (entry.status !== "변환 중" && entry.status !== "완료" && entry.status !== "HEIC 디코딩" && entry.status !== "렌더링 중") {
       await convertEntry(entry);
     }
   }
