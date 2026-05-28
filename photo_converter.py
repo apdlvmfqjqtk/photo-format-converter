@@ -75,7 +75,6 @@ class PhotoConverter:
     def __init__(self, root: Tk) -> None:
         self.root = root
         self.root.title("사진 포맷 변환기")
-        self.root.geometry("900(" if os.name == "nt" else "") # Default size
         self.root.geometry("980x620")
         self.root.minsize(920, 580)
         
