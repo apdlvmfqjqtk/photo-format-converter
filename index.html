@@ -3,15 +3,19 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>사진 포맷 변환기</title>
+    <title>사진 포맷 일괄 변환기 - 로컬 초고속 이미지 변환</title>
+    <meta name="description" content="서버 전송 없이 안전하게 브라우저 내에서 직접 변환하는 로컬 사진 포맷 변환 프로그램입니다.">
     <link rel="stylesheet" href="./styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+KR:wght@300;400;700;900&display=swap" rel="stylesheet">
   </head>
   <body>
     <main class="app-shell">
       <section class="workspace" aria-labelledby="app-title">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Local image converter</p>
+            <p class="eyebrow">Local Client-Side Image Processor</p>
             <h1 id="app-title">사진 포맷 변환기</h1>
           </div>
           <button class="icon-button" id="clearButton" type="button" title="목록 비우기" aria-label="목록 비우기">
@@ -24,7 +28,7 @@
             <input id="fileInput" type="file" accept="image/*,.heic,.heif,.tif,.tiff" multiple>
             <span class="drop-icon" aria-hidden="true">+</span>
             <span class="drop-title">사진을 선택하거나 여기로 끌어오세요</span>
-            <span class="drop-copy">입력은 브라우저가 읽는 이미지 기준입니다. PNG, JPG, WebP, GIF, BMP, AVIF는 대부분 지원되고 HEIC, TIFF는 환경에 따라 제한됩니다.</span>
+            <span class="drop-copy">브라우저 내에서 안전하게 변환하며, 파일은 외부 서버로 전송되지 않습니다.</span>
           </label>
 
           <aside class="controls" aria-label="변환 옵션">
@@ -45,24 +49,80 @@
               <input id="qualityRange" type="range" min="40" max="100" value="92">
             </div>
 
-            <label class="checkbox-row">
-              <input id="resizeToggle" type="checkbox">
-              <span>최대 크기 제한</span>
-            </label>
-
-            <div class="split-inputs">
-              <div class="control-group">
-                <label for="maxWidth">가로</label>
-                <input id="maxWidth" type="number" min="1" value="1920" disabled>
-              </div>
-              <div class="control-group">
-                <label for="maxHeight">세로</label>
-                <input id="maxHeight" type="number" min="1" value="1080" disabled>
+            <!-- 파일명 변경 옵션 -->
+            <div class="control-group">
+              <label>파일명 옵션</label>
+              <div class="split-inputs">
+                <div class="input-subgroup">
+                  <input id="filenamePrefix" type="text" placeholder="접두사">
+                </div>
+                <div class="input-subgroup">
+                  <input id="filenameSuffix" type="text" placeholder="접미사">
+                </div>
               </div>
             </div>
 
+            <!-- 크기 조절 옵션 -->
+            <div class="control-group">
+              <label for="resizeModeSelect">크기 조절 모드</label>
+              <select id="resizeModeSelect">
+                <option value="none" selected>원본 크기 유지</option>
+                <option value="percentage">비율 축소 (%)</option>
+                <option value="width">너비 고정 (px)</option>
+                <option value="height">높이 고정 (px)</option>
+                <option value="fit">가로/세로 최대 제한 (px)</option>
+              </select>
+            </div>
+
+            <!-- 비율 리사이즈 인터페이스 -->
+            <div class="control-group" id="resizePercentageControl" style="display: none;">
+              <div class="label-row">
+                <label for="resizePercentage">축소 비율</label>
+                <output id="resizePercentageValue" for="resizePercentage">80%</output>
+              </div>
+              <input id="resizePercentage" type="range" min="5" max="99" value="80">
+            </div>
+
+            <!-- 고정 크기 리사이즈 인터페이스 -->
+            <div class="split-inputs" id="resizeDimensionsControl" style="display: none;">
+              <div class="control-group">
+                <label for="maxWidth" id="widthLabel">가로 제한</label>
+                <input id="maxWidth" type="number" min="1" value="1920">
+              </div>
+              <div class="control-group">
+                <label for="maxHeight" id="heightLabel">세로 제한</label>
+                <input id="maxHeight" type="number" min="1" value="1080">
+              </div>
+            </div>
+
+            <!-- 회전 및 반전 -->
+            <div class="control-group">
+              <label for="rotateSelect">회전</label>
+              <select id="rotateSelect">
+                <option value="0">회전 없음</option>
+                <option value="90">우측으로 90°</option>
+                <option value="180">180° 회전</option>
+                <option value="270">좌측으로 90°</option>
+              </select>
+            </div>
+
+            <div class="checkbox-group">
+              <label class="checkbox-row">
+                <input id="flipHToggle" type="checkbox">
+                <span>좌우 반전</span>
+              </label>
+              <label class="checkbox-row">
+                <input id="flipVToggle" type="checkbox">
+                <span>상하 반전</span>
+              </label>
+              <label class="checkbox-row">
+                <input id="grayscaleToggle" type="checkbox">
+                <span>흑백 필터</span>
+              </label>
+            </div>
+
             <button class="primary-button" id="convertButton" type="button" disabled>
-              변환하기
+              변환 시작하기
             </button>
           </aside>
         </div>
@@ -70,19 +130,46 @@
 
       <section class="results" aria-labelledby="results-title">
         <div class="section-heading">
-          <h2 id="results-title">파일 목록</h2>
-          <p id="statusText">아직 선택된 사진이 없습니다.</p>
+          <div>
+            <h2 id="results-title">파일 목록</h2>
+            <p id="statusText">아직 선택된 사진이 없습니다.</p>
+          </div>
+          <button class="zip-button" id="downloadAllZipButton" type="button" style="display: none;">
+            <span class="zip-icon">📁</span> 모두 ZIP으로 다운로드
+          </button>
         </div>
         <div class="file-list" id="fileList"></div>
       </section>
     </main>
 
+    <!-- 상세보기 모달 라이트박스 -->
+    <div id="previewModal" class="modal" style="display: none;">
+      <div class="modal-overlay" id="modalOverlay"></div>
+      <div class="modal-content">
+        <button class="modal-close" id="modalCloseButton" type="button" title="닫기" aria-label="닫기">&times;</button>
+        <div class="modal-body">
+          <img id="modalImage" src="" alt="변환 이미지 미리보기">
+        </div>
+        <div class="modal-footer">
+          <div class="modal-meta-info">
+            <span id="modalFileName">파일명.jpg</span>
+            <span id="modalFileStats">1.2 MB -> 450 KB (-62.5%)</span>
+          </div>
+          <a id="modalDownloadLink" class="download-link" href="#" download>개별 다운로드</a>
+        </div>
+      </div>
+    </div>
+
     <template id="fileCardTemplate">
       <article class="file-card">
-        <img class="preview" alt="">
+        <div class="preview-container">
+          <img class="preview" alt="" role="button" title="크게 보기">
+          <span class="preview-overlay-icon">🔍</span>
+        </div>
         <div class="file-meta">
           <h3></h3>
-          <p></p>
+          <p class="orig-meta"></p>
+          <p class="new-meta"></p>
         </div>
         <div class="file-actions">
           <span class="badge">대기</span>

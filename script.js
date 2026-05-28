@@ -5,14 +5,38 @@ const formatNotice = document.querySelector("#formatNotice");
 const qualityControl = document.querySelector("#qualityControl");
 const qualityRange = document.querySelector("#qualityRange");
 const qualityValue = document.querySelector("#qualityValue");
-const resizeToggle = document.querySelector("#resizeToggle");
-const maxWidthInput = document.querySelector("#maxWidth");
-const maxHeightInput = document.querySelector("#maxHeight");
 const convertButton = document.querySelector("#convertButton");
 const clearButton = document.querySelector("#clearButton");
 const fileList = document.querySelector("#fileList");
 const statusText = document.querySelector("#statusText");
 const cardTemplate = document.querySelector("#fileCardTemplate");
+
+// New UI Controls
+const resizeModeSelect = document.querySelector("#resizeModeSelect");
+const resizePercentageControl = document.querySelector("#resizePercentageControl");
+const resizePercentageInput = document.querySelector("#resizePercentage");
+const resizePercentageValue = document.querySelector("#resizePercentageValue");
+const resizeDimensionsControl = document.querySelector("#resizeDimensionsControl");
+const widthLabel = document.querySelector("#widthLabel");
+const heightLabel = document.querySelector("#heightLabel");
+const maxWidthInput = document.querySelector("#maxWidth");
+const maxHeightInput = document.querySelector("#maxHeight");
+const rotateSelect = document.querySelector("#rotateSelect");
+const flipHToggle = document.querySelector("#flipHToggle");
+const flipVToggle = document.querySelector("#flipVToggle");
+const grayscaleToggle = document.querySelector("#grayscaleToggle");
+const filenamePrefix = document.querySelector("#filenamePrefix");
+const filenameSuffix = document.querySelector("#filenameSuffix");
+const downloadAllZipButton = document.querySelector("#downloadAllZipButton");
+
+// Modal Elements
+const previewModal = document.querySelector("#previewModal");
+const modalImage = document.querySelector("#modalImage");
+const modalFileName = document.querySelector("#modalFileName");
+const modalFileStats = document.querySelector("#modalFileStats");
+const modalDownloadLink = document.querySelector("#modalDownloadLink");
+const modalCloseButton = document.querySelector("#modalCloseButton");
+const modalOverlay = document.querySelector("#modalOverlay");
 
 const outputFormats = [
   {
@@ -20,33 +44,34 @@ const outputFormats = [
     label: "PNG",
     extension: "png",
     quality: false,
-    notice: "PNG는 무손실 저장입니다. 단, 크기 변경을 켜면 리샘플링으로 픽셀은 바뀝니다.",
+    notice: "PNG는 무손실 저장입니다. 투명 배경이 유지되며 품질 조절이 비활성화됩니다.",
   },
   {
     type: "image/jpeg",
     label: "JPEG",
     extension: "jpg",
     quality: true,
-    notice: "JPEG는 손실 압축입니다. 품질 100%도 원본과 완전히 같지는 않고 투명 배경은 흰색으로 합쳐집니다.",
+    notice: "JPEG는 손실 압축입니다. 투명 배경은 흰색으로 채워지며 용량 관리에 유리합니다.",
   },
   {
     type: "image/webp",
     label: "WebP",
     extension: "webp",
     quality: true,
-    notice: "WebP는 보통 손실 압축으로 저장됩니다. 품질을 높이면 열화는 줄지만 파일이 커집니다.",
+    notice: "WebP는 뛰어난 압축 효율을 보여줍니다. 투명 배경을 지원하며 현대 웹 환경에 권장됩니다.",
   },
   {
     type: "image/avif",
     label: "AVIF",
     extension: "avif",
     quality: true,
-    notice: "AVIF는 브라우저가 인코딩을 지원할 때만 표시됩니다. 압축 효율은 좋지만 변환이 느릴 수 있습니다.",
+    notice: "AVIF는 최고 수준의 차세대 압축률을 자랑하지만 브라우저 인코딩 속도가 다소 느릴 수 있습니다.",
   },
 ];
 
 let entries = [];
 let supportedFormats = [];
+let jszipLoaded = false;
 
 function canvasSupports(type) {
   const canvas = document.createElement("canvas");
@@ -74,6 +99,7 @@ function currentFormat() {
 }
 
 function formatBytes(bytes) {
+  if (bytes === undefined || bytes === null) return "-";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -85,17 +111,23 @@ function baseName(name) {
 
 function updateFormatControls() {
   const format = currentFormat();
-  qualityControl.hidden = !format.quality;
+  qualityControl.style.display = format.quality ? "block" : "none";
   formatNotice.textContent = format.notice;
 }
 
 function updateStatus() {
   const total = entries.length;
-  const done = entries.filter((entry) => entry.downloadUrl).length;
+  const done = entries.filter((entry) => entry.status === "완료").length;
   statusText.textContent = total
     ? `${total}개 파일 선택됨, ${done}개 변환 완료`
     : "아직 선택된 사진이 없습니다.";
   convertButton.disabled = total === 0;
+
+  if (done > 0) {
+    downloadAllZipButton.style.display = "inline-flex";
+  } else {
+    downloadAllZipButton.style.display = "none";
+  }
 }
 
 function revokeEntry(entry) {
@@ -108,16 +140,26 @@ function renderEntries() {
 
   for (const entry of entries) {
     const card = cardTemplate.content.firstElementChild.cloneNode(true);
+    const previewContainer = card.querySelector(".preview-container");
     const preview = card.querySelector(".preview");
     const title = card.querySelector("h3");
-    const meta = card.querySelector("p");
+    const origMeta = card.querySelector(".orig-meta");
+    const newMeta = card.querySelector(".new-meta");
     const badge = card.querySelector(".badge");
     const link = card.querySelector(".download-link");
 
     preview.src = entry.previewUrl;
     preview.alt = `${entry.file.name} 미리보기`;
     title.textContent = entry.file.name;
-    meta.textContent = `${entry.file.type || "알 수 없는 형식"} · ${formatBytes(entry.file.size)}`;
+    origMeta.textContent = `${entry.file.type.split("/")[1]?.toUpperCase() || "IMAGE"} · ${formatBytes(entry.file.size)}`;
+    
+    if (entry.status === "완료" && entry.newSizeStr && entry.ratioStr) {
+      newMeta.textContent = `➡ ${entry.newSizeStr} (${entry.ratioStr})`;
+      newMeta.style.display = "block";
+    } else {
+      newMeta.style.display = "none";
+    }
+
     badge.textContent = entry.status;
     badge.className = `badge ${entry.statusClass || ""}`.trim();
 
@@ -126,6 +168,9 @@ function renderEntries() {
       link.download = entry.outputName;
       link.hidden = false;
     }
+
+    // Attach preview event to thumbnail click
+    previewContainer.addEventListener("click", () => openModal(entry));
 
     fileList.append(card);
   }
@@ -137,13 +182,19 @@ function addFiles(files) {
   const imageFiles = [...files].filter((file) => file.type.startsWith("image/") || /\.(heic|heif|tif|tiff)$/i.test(file.name));
 
   for (const file of imageFiles) {
+    // Avoid duplicate additions based on name & size
+    if (entries.some((entry) => entry.file.name === file.name && entry.file.size === file.size)) continue;
+    
     entries.push({
       file,
       previewUrl: URL.createObjectURL(file),
       downloadUrl: "",
+      blob: null,
       outputName: "",
       status: "대기",
       statusClass: "",
+      newSizeStr: "",
+      ratioStr: "",
     });
   }
 
@@ -161,23 +212,50 @@ function imageFromFile(file) {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("이 브라우저에서 읽을 수 없는 입력 형식입니다."));
+      reject(new Error("이 브라우저에서 지원하지 않거나 손상된 파일 형식입니다."));
     };
     image.src = url;
   });
 }
 
 function getTargetSize(width, height) {
-  if (!resizeToggle.checked) return { width, height };
-
-  const maxWidth = Math.max(1, Number(maxWidthInput.value) || width);
-  const maxHeight = Math.max(1, Number(maxHeightInput.value) || height);
-  const scale = Math.min(1, maxWidth / width, maxHeight / height);
-
-  return {
-    width: Math.max(1, Math.round(width * scale)),
-    height: Math.max(1, Math.round(height * scale)),
-  };
+  const mode = resizeModeSelect.value;
+  if (mode === "none") {
+    return { width, height };
+  }
+  if (mode === "percentage") {
+    const pct = Math.max(5, Math.min(99, Number(resizePercentageInput.value) || 80)) / 100;
+    return {
+      width: Math.max(1, Math.round(width * pct)),
+      height: Math.max(1, Math.round(height * pct)),
+    };
+  }
+  if (mode === "width") {
+    const targetW = Math.max(1, Number(maxWidthInput.value) || width);
+    const scale = targetW / width;
+    return {
+      width: targetW,
+      height: Math.max(1, Math.round(height * scale)),
+    };
+  }
+  if (mode === "height") {
+    const targetH = Math.max(1, Number(maxHeightInput.value) || height);
+    const scale = targetH / height;
+    return {
+      width: Math.max(1, Math.round(width * scale)),
+      height: targetH,
+    };
+  }
+  if (mode === "fit") {
+    const maxW = Math.max(1, Number(maxWidthInput.value) || width);
+    const maxH = Math.max(1, Number(maxHeightInput.value) || height);
+    const scale = Math.min(1, maxW / width, maxH / height);
+    return {
+      width: Math.max(1, Math.round(width * scale)),
+      height: Math.max(1, Math.round(height * scale)),
+    };
+  }
+  return { width, height };
 }
 
 async function convertEntry(entry) {
@@ -189,40 +267,180 @@ async function convertEntry(entry) {
   try {
     const image = await imageFromFile(entry.file);
     const size = getTargetSize(image.naturalWidth, image.naturalHeight);
+    
+    // Rotate checks
+    const rotation = Number(rotateSelect.value);
+    const isSwapped = rotation === 90 || rotation === 270;
+    
+    // Canvas sizing based on rotation
+    const canvasW = isSwapped ? size.height : size.width;
+    const canvasH = isSwapped ? size.width : size.height;
+
     const canvas = document.createElement("canvas");
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    
     const context = canvas.getContext("2d", { alpha: format.type !== "image/jpeg" });
 
-    canvas.width = size.width;
-    canvas.height = size.height;
-
+    // Handle white background for transparent to JPG
     if (format.type === "image/jpeg") {
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, canvas.width, canvas.height);
     }
 
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    // Grayscale Filter
+    if (grayscaleToggle.checked) {
+      context.filter = "grayscale(100%)";
+    } else {
+      context.filter = "none";
+    }
 
+    // Centered Transforms
+    context.save();
+    context.translate(canvasW / 2, canvasH / 2);
+    
+    if (rotation !== 0) {
+      context.rotate((rotation * Math.PI) / 180);
+    }
+
+    const scaleX = flipHToggle.checked ? -1 : 1;
+    const scaleY = flipVToggle.checked ? -1 : 1;
+    context.scale(scaleX, scaleY);
+
+    context.drawImage(image, -size.width / 2, -size.height / 2, size.width, size.height);
+    context.restore();
+
+    // Export Blob
     const blob = await new Promise((resolve, reject) => {
       canvas.toBlob(
-        (result) => (result ? resolve(result) : reject(new Error("이 브라우저가 선택한 출력 형식을 지원하지 않습니다."))),
+        (result) => (result ? resolve(result) : reject(new Error("포맷 내보내기를 지원하지 않습니다."))),
         format.type,
         format.quality ? Number(qualityRange.value) / 100 : undefined,
       );
     });
 
     if (entry.downloadUrl) URL.revokeObjectURL(entry.downloadUrl);
+    entry.blob = blob;
     entry.downloadUrl = URL.createObjectURL(blob);
-    entry.outputName = `${baseName(entry.file.name)}.${format.extension}`;
+    
+    // Customize target naming pattern
+    const prefix = filenamePrefix.value || "";
+    const suffix = filenameSuffix.value || "";
+    entry.outputName = `${prefix}${baseName(entry.file.name)}${suffix}.${format.extension}`;
+    
     entry.status = "완료";
     entry.statusClass = "done";
+    
+    // Update sizing details
+    entry.newSizeStr = formatBytes(blob.size);
+    const pctDiff = ((blob.size - entry.file.size) / entry.file.size) * 100;
+    entry.ratioStr = pctDiff < 0 ? `${pctDiff.toFixed(1)}%` : `+${pctDiff.toFixed(1)}%`;
+    
   } catch (error) {
     entry.status = error.message;
     entry.statusClass = "error";
+    entry.blob = null;
+    entry.downloadUrl = "";
+    entry.newSizeStr = "";
+    entry.ratioStr = "";
   }
 
   renderEntries();
 }
 
+function openModal(entry) {
+  const displayUrl = entry.downloadUrl || entry.previewUrl;
+  if (!displayUrl) return;
+
+  modalImage.src = displayUrl;
+  modalFileName.textContent = entry.outputName || entry.file.name;
+  
+  if (entry.status === "완료" && entry.newSizeStr && entry.ratioStr) {
+    modalFileStats.textContent = `${formatBytes(entry.file.size)} ➡ ${entry.newSizeStr} (${entry.ratioStr})`;
+  } else {
+    modalFileStats.textContent = `${formatBytes(entry.file.size)} (변환 대기 중)`;
+  }
+
+  if (entry.downloadUrl) {
+    modalDownloadLink.href = entry.downloadUrl;
+    modalDownloadLink.download = entry.outputName;
+    modalDownloadLink.style.display = "inline-flex";
+  } else {
+    modalDownloadLink.style.display = "none";
+  }
+
+  previewModal.style.display = "flex";
+}
+
+function closeModal() {
+  previewModal.style.display = "none";
+  modalImage.src = "";
+}
+
+function loadJSZip() {
+  return new Promise((resolve, reject) => {
+    if (window.JSZip) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    script.onload = () => {
+      jszipLoaded = true;
+      resolve();
+    };
+    script.onerror = () => {
+      reject(new Error("JSZip 라이브러리를 CDN에서 로딩할 수 없습니다. 오프라인 상태이거나 차단되었을 수 있습니다."));
+    };
+    document.head.appendChild(script);
+  });
+}
+
+async function downloadAllZip() {
+  const completed = entries.filter((e) => e.blob && e.status === "완료");
+  if (completed.length === 0) return;
+
+  downloadAllZipButton.disabled = true;
+  const originalText = downloadAllZipButton.innerHTML;
+  downloadAllZipButton.textContent = "ZIP 생성 중...";
+
+  try {
+    await loadJSZip();
+    const zip = new JSZip();
+    const nameTracker = {};
+
+    for (const entry of completed) {
+      let uniqueName = entry.outputName;
+      if (nameTracker[uniqueName]) {
+        const parts = uniqueName.split(".");
+        const ext = parts.pop();
+        const base = parts.join(".");
+        nameTracker[uniqueName]++;
+        uniqueName = `${base}_${nameTracker[uniqueName]}.${ext}`;
+      } else {
+        nameTracker[uniqueName] = 1;
+      }
+      zip.file(uniqueName, entry.blob);
+    }
+
+    const content = await zip.generateAsync({ type: "blob" });
+    const zipUrl = URL.createObjectURL(content);
+
+    const a = document.createElement("a");
+    a.href = zipUrl;
+    a.download = `converted_images_${Date.now()}.zip`;
+    a.click();
+
+    setTimeout(() => URL.revokeObjectURL(zipUrl), 60000);
+  } catch (error) {
+    alert(error.message + "\n\n개별 이미지 다운로드를 이용해 주세요.");
+  } finally {
+    downloadAllZipButton.disabled = false;
+    downloadAllZipButton.innerHTML = originalText;
+  }
+}
+
+// Events
 fileInput.addEventListener("change", (event) => {
   addFiles(event.target.files);
   fileInput.value = "";
@@ -249,9 +467,46 @@ qualityRange.addEventListener("input", () => {
   qualityValue.value = `${qualityRange.value}%`;
 });
 
-resizeToggle.addEventListener("change", () => {
-  maxWidthInput.disabled = !resizeToggle.checked;
-  maxHeightInput.disabled = !resizeToggle.checked;
+// Resize mode UI toggles
+resizeModeSelect.addEventListener("change", () => {
+  const val = resizeModeSelect.value;
+  
+  if (val === "none") {
+    resizePercentageControl.style.display = "none";
+    resizeDimensionsControl.style.display = "none";
+  } else if (val === "percentage") {
+    resizePercentageControl.style.display = "block";
+    resizeDimensionsControl.style.display = "none";
+  } else {
+    // Fixed width, Fixed height, or Fit
+    resizePercentageControl.style.display = "none";
+    resizeDimensionsControl.style.display = "grid";
+
+    if (val === "width") {
+      widthLabel.textContent = "고정 너비 (px)";
+      maxWidthInput.style.display = "block";
+      widthLabel.style.display = "block";
+      maxHeightInput.style.display = "none";
+      heightLabel.style.display = "none";
+    } else if (val === "height") {
+      heightLabel.textContent = "고정 높이 (px)";
+      maxWidthInput.style.display = "none";
+      widthLabel.style.display = "none";
+      maxHeightInput.style.display = "block";
+      heightLabel.style.display = "block";
+    } else if (val === "fit") {
+      widthLabel.textContent = "가로 제한 (px)";
+      heightLabel.textContent = "세로 제한 (px)";
+      maxWidthInput.style.display = "block";
+      widthLabel.style.display = "block";
+      maxHeightInput.style.display = "block";
+      heightLabel.style.display = "block";
+    }
+  }
+});
+
+resizePercentageInput.addEventListener("input", () => {
+  resizePercentageValue.value = `${resizePercentageInput.value}%`;
 });
 
 clearButton.addEventListener("click", () => {
@@ -263,10 +518,21 @@ clearButton.addEventListener("click", () => {
 convertButton.addEventListener("click", async () => {
   convertButton.disabled = true;
   for (const entry of entries) {
-    await convertEntry(entry);
+    if (entry.status !== "변환 중") {
+      await convertEntry(entry);
+    }
   }
   updateStatus();
 });
 
+downloadAllZipButton.addEventListener("click", downloadAllZip);
+
+modalCloseButton.addEventListener("click", closeModal);
+modalOverlay.addEventListener("click", closeModal);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeModal();
+});
+
+// Init
 initializeFormats();
 renderEntries();
