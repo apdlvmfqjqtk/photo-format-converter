@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 *.spec
+*-onedir.zip
 converted/
 converted_test/
 *.log
