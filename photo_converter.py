@@ -250,9 +250,9 @@ class PhotoConverter:
         qual_frame.grid(row=0, column=1, sticky="ew", padx=(6, 0))
         qual_label_row = ttk.Frame(qual_frame)
         qual_label_row.pack(fill="x")
-        ttk.Label(qual_label_row, text="품질").pack(side="left")
+        ttk.Label(qual_label_row, text="품질 (추천: 80~90)").pack(side="left")
         ttk.Label(qual_label_row, textvariable=self.quality, font=("Malgun Gothic", 9, "bold")).pack(side="right")
-        self.qual_scale = ttk.Scale(qual_frame, from_=40, to=100, variable=self.quality, orient="horizontal")
+        self.qual_scale = ttk.Scale(qual_frame, from_=40, to=100, variable=self.quality, orient="horizontal", command=self._on_quality_change)
         self.qual_scale.pack(fill="x", pady=(4, 0))
 
         # Notice Label
@@ -310,7 +310,7 @@ class PhotoConverter:
         pct_lbl_row.pack(fill="x")
         ttk.Label(pct_lbl_row, text="축소 비율").pack(side="left")
         ttk.Label(pct_lbl_row, textvariable=self.resize_pct, font=("Malgun Gothic", 9, "bold")).pack(side="right")
-        self.pct_scale = ttk.Scale(self.pct_frame, from_=5, to=99, variable=self.resize_pct, orient="horizontal")
+        self.pct_scale = ttk.Scale(self.pct_frame, from_=5, to=99, variable=self.resize_pct, orient="horizontal", command=self._on_pct_change)
         self.pct_scale.pack(fill="x", pady=(4, 0))
         
         # 2. Dimensions Frame
@@ -400,6 +400,12 @@ class PhotoConverter:
             self.rotate_angle.set("180")
         elif lbl == "좌측으로 90°":
             self.rotate_angle.set("270")
+
+    def _on_quality_change(self, val: str) -> None:
+        self.quality.set(int(float(val)))
+
+    def _on_pct_change(self, val: str) -> None:
+        self.resize_pct.set(int(float(val)))
 
     def _update_notice(self) -> None:
         fmt = self.output_format.get()
@@ -658,11 +664,36 @@ class PhotoConverter:
 
 
 def main() -> None:
+    # High DPI support for Windows
+    if os.name == "nt":
+        import ctypes
+        try:
+            # Per Monitor DPI Aware (value = 2)
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            try:
+                # System DPI Aware
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+
     root = Tk()
     try:
-        root.call("tk", "scaling", 1.25)
+        # Calculate dynamic scaling based on system DPI on Windows
+        if os.name == "nt":
+            hdc = ctypes.windll.user32.GetDC(0)
+            dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # 88 = LOGPIXELSX
+            ctypes.windll.user32.ReleaseDC(0, hdc)
+            scale = dpi / 96.0
+            root.call("tk", "scaling", scale)
+        else:
+            root.call("tk", "scaling", 1.25)
     except Exception:
-        pass
+        try:
+            root.call("tk", "scaling", 1.25)
+        except Exception:
+            pass
+            
     PhotoConverter(root)
     root.mainloop()
 
